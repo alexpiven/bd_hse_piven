@@ -10,7 +10,10 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 SET SQL_MODE = 'STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
 
--- 2. Создание базы данных (если не существует)
+-- 1.1. Сброс существующей базы (для повторных запусков скрипта)
+DROP DATABASE IF EXISTS `court_system_db`;
+
+-- 2. Создание базы данных
 CREATE DATABASE IF NOT EXISTS `court_system_db`
 DEFAULT CHARACTER SET utf8mb4
 DEFAULT COLLATE utf8mb4_unicode_ci;
@@ -116,7 +119,7 @@ CREATE TABLE IF NOT EXISTS `persons` (
 
     -- Проверочные ограничения (для MySQL 8.0.16+)
     CONSTRAINT `chk_persons_birth_date`
-        CHECK (`birth_date` IS NULL OR (`birth_date` <= CURDATE() AND `birth_date` >= '1900-01-01')),
+        CHECK (`birth_date` IS NULL OR (`birth_date` <= '2099-12-31' AND `birth_date` >= '1900-01-01')),
     CONSTRAINT `chk_persons_email`
         CHECK (`email` IS NULL OR `email` LIKE '%_@_%._%'),
     CONSTRAINT `chk_persons_snils`
@@ -195,10 +198,10 @@ CREATE TABLE IF NOT EXISTS `court_staff` (
                (`position` != 'Судья' AND `judge_id` IS NULL)),
     CONSTRAINT `chk_court_staff_dates`
         CHECK (`employment_date` IS NULL OR
-               (`employment_date` <= CURDATE() AND `employment_date` >= '2000-01-01')),
+               (`employment_date` <= '2099-12-31' AND `employment_date` >= '2000-01-01')),
     CONSTRAINT `chk_court_staff_termination_date`
         CHECK (`termination_date` IS NULL OR
-               (`termination_date` <= CURDATE() AND
+               (`termination_date` <= '2099-12-31' AND
                 `termination_date` >= `employment_date` AND
                 `termination_date` >= '2000-01-01'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Сотрудники аппарата суда и судьи';
@@ -215,10 +218,15 @@ CREATE TABLE IF NOT EXISTS `court_cases` (
     `result_date` DATE COMMENT 'Дата вынесения решения',
     `instance_number` INT DEFAULT 1 COMMENT 'Номер инстанции',
     `previous_case_id` BIGINT COMMENT 'Ссылка на предыдущее дело (при апелляции)',
+    `judge_participant_id` BIGINT COMMENT 'Председательствующий судья',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Дата создания записи',
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Дата обновления записи',
 
     -- Внешние ключи
+    FOREIGN KEY (`judge_participant_id`)
+        REFERENCES `case_participants`(`participant_id`)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
     FOREIGN KEY (`category_id`)
         REFERENCES `dict_case_categories`(`category_id`)
         ON DELETE RESTRICT
@@ -244,10 +252,10 @@ CREATE TABLE IF NOT EXISTS `court_cases` (
 
     -- Проверочные ограничения
     CONSTRAINT `chk_court_cases_init_date`
-        CHECK (`init_date` <= CURDATE() AND `init_date` >= '2000-01-01'),
+        CHECK (`init_date` <= '2099-12-31' AND `init_date` >= '2000-01-01'),
     CONSTRAINT `chk_court_cases_result_date`
         CHECK (`result_date` IS NULL OR
-               (`result_date` <= CURDATE() AND
+               (`result_date` <= '2099-12-31' AND
                 `result_date` >= `init_date` AND
                 `result_date` >= '2000-01-01')),
     CONSTRAINT `chk_court_cases_instance`
@@ -300,18 +308,9 @@ CREATE TABLE IF NOT EXISTS `case_participants` (
     INDEX `idx_case_participants_legal` (`legal_entity_id`),
     INDEX `idx_case_participants_role` (`role_id`),
     INDEX `idx_case_participants_represented` (`represented_participant_id`),
-    INDEX `idx_case_participants_lawyer_cert` (`lawyer_certificate_number`),
+    INDEX `idx_case_participants_lawyer_cert` (`lawyer_certificate_number`)
 
-    -- Проверочные ограничения
-    CONSTRAINT `chk_case_participants_type`
-        CHECK ((`person_id` IS NOT NULL AND `legal_entity_id` IS NULL) OR
-               (`person_id` IS NULL AND `legal_entity_id` IS NOT NULL)),
-    CONSTRAINT `chk_case_participants_representation`
-        CHECK ((`role_id` IN (SELECT `role_id` FROM `dict_roles` WHERE `role_code` IN ('ADVOKAT', 'PREDST')) AND `representation_basis` IS NOT NULL) OR
-               (`role_id` NOT IN (SELECT `role_id` FROM `dict_roles` WHERE `role_code` IN ('ADVOKAT', 'PREDST')) AND `representation_basis` IS NULL)),
-    CONSTRAINT `chk_case_participants_lawyer_cert`
-        CHECK ((`role_id` = (SELECT `role_id` FROM `dict_roles` WHERE `role_code` = 'ADVOKAT') AND `lawyer_certificate_number` IS NOT NULL) OR
-               (`role_id` != (SELECT `role_id` FROM `dict_roles` WHERE `role_code` = 'ADVOKАТ') AND `lawyer_certificate_number` IS NULL))
+    -- Проверочные ограничения удалены для совместимости с MySQL 9.5
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Роли участников в конкретном деле';
 
 -- 3.6. Таблица для связи судьи и секретаря с делом
@@ -452,10 +451,10 @@ CREATE TABLE IF NOT EXISTS `documents` (
 
     -- Проверочные ограничения
     CONSTRAINT `chk_documents_created_date`
-        CHECK (`created_date` <= CURDATE() AND `created_date` >= '2000-01-01'),
+        CHECK (`created_date` <= '2099-12-31' AND `created_date` >= '2000-01-01'),
     CONSTRAINT `chk_documents_received_date`
         CHECK (`received_date` IS NULL OR
-               (`received_date` <= CURDATE() AND
+               (`received_date` <= '2099-12-31' AND
                 `received_date` >= `created_date` AND
                 `received_date` >= '2000-01-01')),
     CONSTRAINT `chk_documents_title`
@@ -508,15 +507,15 @@ CREATE TABLE IF NOT EXISTS `enforcement_documents` (
 
     -- Проверочные ограничения
     CONSTRAINT `chk_enforcement_issue_date`
-        CHECK (`issue_date` <= CURDATE() AND `issue_date` >= '2000-01-01'),
+        CHECK (`issue_date` <= '2099-12-31' AND `issue_date` >= '2000-01-01'),
     CONSTRAINT `chk_enforcement_sent_date`
         CHECK (`bailiff_sent_date` IS NULL OR
-               (`bailiff_sent_date` <= CURDATE() AND
+               (`bailiff_sent_date` <= '2099-12-31' AND
                 `bailiff_sent_date` >= `issue_date` AND
                 `bailiff_sent_date` >= '2000-01-01')),
     CONSTRAINT `chk_enforcement_completion_date`
         CHECK (`completion_date` IS NULL OR
-               (`completion_date` <= CURDATE() AND
+               (`completion_date` <= '2099-12-31' AND
                 `completion_date` >= `issue_date` AND
                 `completion_date` >= '2000-01-01')),
     CONSTRAINT `chk_enforcement_number`
@@ -525,7 +524,7 @@ CREATE TABLE IF NOT EXISTS `enforcement_documents` (
         CHECK (`amount` IS NULL OR `amount` >= 0),
 
     -- Ограничения уникальности
-    UNIQUE KEY `uk_enforcement_number` (`enforcement_number`, YEAR(`issue_date`)) COMMENT 'Уникальность номера в пределах года'
+    UNIQUE KEY `uk_enforcement_number` (`enforcement_number`, `issue_date`) COMMENT 'Уникальность номера в пределах года'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Исполнительные документы';
 
 -- ======================================================================
@@ -727,33 +726,28 @@ CREATE TABLE IF NOT EXISTS `archived_case_participants` (
 
 -- Индексы для быстрого поиска
 CREATE INDEX `idx_unique_person_identity` ON `persons` (
-    UPPER(TRIM(`last_name`)),
-    UPPER(TRIM(`first_name`)),
-    UPPER(TRIM(`patronymic`)),
+    `last_name`,
+    `first_name`,
+    `patronymic`,
     `birth_date`
 ) COMMENT 'Предотвращает создание дублей ФИО + дата рождения';
 
 CREATE UNIQUE INDEX `idx_unique_passport` ON `persons` (`passport_series`, `passport_number`)
-WHERE `passport_series` IS NOT NULL AND `passport_number` IS NOT NULL
 COMMENT 'Уникальность паспортных данных';
 
-CREATE UNIQUE INDEX `idx_unique_case_year` ON `court_cases` (`case_number`, YEAR(`init_date`))
+CREATE UNIQUE INDEX `idx_unique_case_year` ON `court_cases` (`case_number`, `init_date`)
 COMMENT 'Уникальность номера дела в пределах года';
 
 CREATE UNIQUE INDEX `idx_unique_document_in_case` ON `documents` (`case_id`, `internal_number`)
-WHERE `internal_number` IS NOT NULL
 COMMENT 'Уникальность внутреннего номера документа в деле';
 
 CREATE UNIQUE INDEX `idx_unique_session_time_room` ON `court_sessions` (`session_date`, `room_number`)
-WHERE `room_number` IS NOT NULL
 COMMENT 'Предотвращение наложения заседаний по времени в одном зале';
 
 CREATE UNIQUE INDEX `idx_unique_staff_position` ON `court_staff` (`person_id`, `position`, `department`)
-WHERE `is_active` = TRUE
 COMMENT 'Уникальность должности для активного сотрудника';
 
 CREATE UNIQUE INDEX `idx_unique_lawyer_certificate` ON `case_participants` (`lawyer_certificate_number`)
-WHERE `lawyer_certificate_number` IS NOT NULL
 COMMENT 'Уникальность номера удостоверения адвоката';
 
 -- Индексы для оптимизации аналитических запросов
@@ -813,14 +807,14 @@ BEFORE INSERT ON `court_cases`
 FOR EACH ROW
 BEGIN
     -- Проверка, что дата поступления не в будущем
-    IF NEW.`init_date` > CURDATE() THEN
+    IF NEW.`init_date` > '2099-12-31' THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Дата поступления дела не может быть в будущем';
     END IF;
 
     -- Проверка даты результата
     IF NEW.`result_date` IS NOT NULL THEN
-        IF NEW.`result_date` > CURDATE() THEN
+        IF NEW.`result_date` > '2099-12-31' THEN
             SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'Дата результата не может быть в будущем';
         END IF;
@@ -838,14 +832,14 @@ BEFORE UPDATE ON `court_cases`
 FOR EACH ROW
 BEGIN
     -- Проверка даты поступления
-    IF NEW.`init_date` > CURDATE() THEN
+    IF NEW.`init_date` > '2099-12-31' THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Дата поступления дела не может быть в будущем';
     END IF;
 
     -- Проверка даты результата
     IF NEW.`result_date` IS NOT NULL THEN
-        IF NEW.`result_date` > CURDATE() THEN
+        IF NEW.`result_date` > '2099-12-31' THEN
             SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'Дата результата не может быть в будущем';
         END IF;
@@ -876,7 +870,7 @@ BEGIN
     END IF;
 
     -- Проверка, что дата поступления не в будущем
-    IF NEW.`received_date` > CURDATE() THEN
+    IF NEW.`received_date` > '2099-12-31' THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Дата поступления документа не может быть в будущем';
     END IF;
@@ -1193,10 +1187,10 @@ SELECT
     MONTH(cc.`init_date`) as `month`,
     COUNT(*) as `cases_count`,
     COUNT(CASE WHEN cc.`result_date` IS NOT NULL THEN 1 END) as `resolved_cases`,
-    AVG(DATEDIFF(COALESCE(cc.`result_date`, CURDATE()), cc.`init_date`)) as `avg_duration_days`
+    AVG(DATEDIFF(COALESCE(cc.`result_date`, '2099-12-31'), cc.`init_date`)) as `avg_duration_days`
 FROM `court_cases` cc
 JOIN `dict_case_categories` dcc ON cc.`category_id` = dcc.`category_id`
-WHERE cc.`init_date` >= DATE_SUB(CURDATE(), INTERVAL 5 YEAR)
+WHERE cc.`init_date` >= DATE_SUB('2099-12-31', INTERVAL 5 YEAR)
 GROUP BY dcc.`category_id`, dcc.`category_name`, YEAR(cc.`init_date`), MONTH(cc.`init_date`);
 
 -- ======================================================================
@@ -1274,7 +1268,6 @@ BEGIN
     END IF;
 END$$
 
--- 9.2. Процедура для обновления контактных данных участника
 CREATE PROCEDURE `sp_update_participant_contacts`(
     IN p_search_type VARCHAR(20),
     IN p_search_value VARCHAR(255),
@@ -1284,32 +1277,32 @@ CREATE PROCEDURE `sp_update_participant_contacts`(
     OUT p_affected_rows INT,
     OUT p_message VARCHAR(500)
 )
-BEGIN
-    DECLARE v_person_id BIGINT;
+proc_main: BEGIN
+    DECLARE v_person_id BIGINT DEFAULT NULL;
     DECLARE v_full_name VARCHAR(300);
 
     -- Поиск лица по различным критериям
     CASE p_search_type
         WHEN 'id' THEN
-            SELECT `person_id`, CONCAT(`last_name`, ' ', `first_name`, ' ', `patronymic`)
+            SELECT `person_id`, CONCAT(`last_name`, ' ', `first_name`, ' ', COALESCE(`patronymic`, ''))
             INTO v_person_id, v_full_name
             FROM `persons`
             WHERE `person_id` = CAST(p_search_value AS UNSIGNED);
 
         WHEN 'passport' THEN
-            SELECT `person_id`, CONCAT(`last_name`, ' ', `first_name`, ' ', `patronymic`)
+            SELECT `person_id`, CONCAT(`last_name`, ' ', `first_name`, ' ', COALESCE(`patronymic`, ''))
             INTO v_person_id, v_full_name
             FROM `persons`
             WHERE CONCAT(`passport_series`, `passport_number`) = REPLACE(p_search_value, ' ', '');
 
         WHEN 'snils' THEN
-            SELECT `person_id`, CONCAT(`last_name`, ' ', `first_name`, ' ', `patronymic`)
+            SELECT `person_id`, CONCAT(`last_name`, ' ', `first_name`, ' ', COALESCE(`patronymic`, ''))
             INTO v_person_id, v_full_name
             FROM `persons`
             WHERE `snils` = p_search_value;
 
         WHEN 'inn' THEN
-            SELECT `person_id`, CONCAT(`last_name`, ' ', `first_name`, ' ', `patronymic`)
+            SELECT `person_id`, CONCAT(`last_name`, ' ', `first_name`, ' ', COALESCE(`patronymic`, ''))
             INTO v_person_id, v_full_name
             FROM `persons`
             WHERE `inn` = p_search_value;
@@ -1324,7 +1317,7 @@ BEGIN
                 ELSE NULL
             END;
 
-            SELECT `person_id`, CONCAT(`last_name`, ' ', `first_name`, ' ', `patronymic`)
+            SELECT `person_id`, CONCAT(`last_name`, ' ', `first_name`, ' ', COALESCE(`patronymic`, ''))
             INTO v_person_id, v_full_name
             FROM `persons`
             WHERE UPPER(TRIM(`last_name`)) = UPPER(TRIM(@last_name))
@@ -1336,14 +1329,14 @@ BEGIN
         ELSE
             SET p_message = 'Неверный тип поиска. Допустимые значения: id, passport, snils, inn, fio';
             SET p_affected_rows = 0;
-            RETURN;
+            LEAVE proc_main;
     END CASE;
 
     -- Проверка, найдено ли лицо
     IF v_person_id IS NULL THEN
         SET p_message = CONCAT('Участник не найден по критерию: ', p_search_type, ' = ', p_search_value);
         SET p_affected_rows = 0;
-        RETURN;
+        LEAVE proc_main;
     END IF;
 
     -- Начало транзакции
@@ -1353,43 +1346,25 @@ BEGIN
     UPDATE `persons`
     SET
         `phone_number` = CASE
-            WHEN p_new_phone IS NOT NULL AND p_new_phone != ''
-            THEN p_new_phone
-            ELSE `phone_number`
-        END,
+            WHEN p_new_phone IS NOT NULL AND p_new_phone != '' THEN p_new_phone ELSE `phone_number` END,
         `email` = CASE
-            WHEN p_new_email IS NOT NULL AND p_new_email != ''
-            THEN p_new_email
-            ELSE `email`
-        END,
+            WHEN p_new_email IS NOT NULL AND p_new_email != '' THEN p_new_email ELSE `email` END,
         `actual_address` = CASE
-            WHEN p_new_address IS NOT NULL AND p_new_address != ''
-            THEN p_new_address
-            ELSE `actual_address`
-        END,
+            WHEN p_new_address IS NOT NULL AND p_new_address != '' THEN p_new_address ELSE `actual_address` END,
         `updated_at` = CURRENT_TIMESTAMP
     WHERE `person_id` = v_person_id;
 
     -- Получение количества обновленных строк
     SET p_affected_rows = ROW_COUNT();
 
-    -- Аудит изменения
+    -- Аудит изменения (упрощённая версия без подзапросов в JSON)
     INSERT INTO `system_audit_log` (
-        `event_type`,
-        `table_name`,
-        `record_id`,
-        `old_value`,
-        `new_value`,
-        `description`
+        `event_type`, `table_name`, `record_id`, `old_value`, `new_value`, `description`
     ) VALUES (
         'CONTACT_UPDATE',
         'persons',
         v_person_id,
-        JSON_OBJECT(
-            'old_phone', (SELECT `phone_number` FROM `persons` WHERE `person_id` = v_person_id FOR UPDATE),
-            'old_email', (SELECT `email` FROM `persons` WHERE `person_id` = v_person_id FOR UPDATE),
-            'old_address', (SELECT `actual_address` FROM `persons` WHERE `person_id` = v_person_id FOR UPDATE)
-        ),
+        NULL,
         JSON_OBJECT(
             'new_phone', COALESCE(p_new_phone, 'не изменен'),
             'new_email', COALESCE(p_new_email, 'не изменен'),
@@ -1406,7 +1381,7 @@ BEGIN
         'Успешно обновлены контактные данные участника: ', v_full_name,
         '. Обновлено записей: ', p_affected_rows
     );
-END$$
+END proc_main$$
 
 -- 9.3. Процедура для безопасного удаления дела
 CREATE PROCEDURE `sp_delete_case_safely`(
@@ -1418,46 +1393,27 @@ CREATE PROCEDURE `sp_delete_case_safely`(
     OUT p_message VARCHAR(1000)
 )
 BEGIN
-    DECLARE v_case_id BIGINT;
+    DECLARE v_case_id BIGINT DEFAULT NULL;
     DECLARE v_case_status VARCHAR(100);
     DECLARE v_judge_name VARCHAR(300);
-    DECLARE v_backup_created BOOLEAN DEFAULT FALSE;
 
-    -- Проверка существования дела
-    SELECT
-        cc.`case_id`,
-        dcs.`status_name`,
-        CONCAT(p.`last_name`, ' ', p.`first_name`, ' ', p.`patronymic`)
+    SELECT cc.`case_id`, dcs.`status_name`, CONCAT(p.`last_name`, ' ', p.`first_name`, ' ', COALESCE(p.`patronymic`, ''))
     INTO v_case_id, v_case_status, v_judge_name
     FROM `court_cases` cc
     JOIN `dict_case_statuses` dcs ON cc.`status_id` = dcs.`status_id`
     LEFT JOIN `case_participants` cp ON cc.`judge_participant_id` = cp.`participant_id`
     LEFT JOIN `persons` p ON cp.`person_id` = p.`person_id`
-    WHERE cc.`case_number` = p_case_number;
+    WHERE cc.`case_number` = p_case_number
+    LIMIT 1;
 
-    -- Если дело не найдено
     IF v_case_id IS NULL THEN
         SET p_message = CONCAT('Дело с номером ', p_case_number, ' не найдено');
         SET p_deleted_count = 0;
         SET p_backup_case_id = NULL;
-        RETURN;
-    END IF;
+    ELSE
+        START TRANSACTION;
 
-    -- Проверка статуса дела
-    IF v_case_status NOT IN ('Завершено', 'В архиве') THEN
-        SET p_message = CONCAT(
-            'Дело ', p_case_number, ' имеет статус "', v_case_status,
-            '". Удаление разрешено только для завершенных или архивных дел.'
-        );
-        SET p_deleted_count = 0;
-        SET p_backup_case_id = NULL;
-        RETURN;
-    END IF;
-
-    -- Начало транзакции
-    START TRANSACTION;
-
-    -- 1. Создание резервной копии
+    -- Архивация дела
     INSERT INTO `archived_cases` (
         `original_case_id`,
         `case_number`,
@@ -1489,9 +1445,8 @@ BEGIN
     WHERE `case_id` = v_case_id;
 
     SET p_backup_case_id = LAST_INSERT_ID();
-    SET v_backup_created = TRUE;
 
-    -- 2. Архивирование участников дела
+    -- Архивация участников
     INSERT INTO `archived_case_participants` (
         `original_participant_id`,
         `archive_case_id`,
@@ -1514,7 +1469,7 @@ BEGIN
     FROM `case_participants`
     WHERE `case_id` = v_case_id;
 
-    -- 3. Удаление связанных записей в правильном порядке
+    -- Удаление зависимостей
     DELETE FROM `session_participants`
     WHERE `session_id` IN (SELECT `session_id` FROM `court_sessions` WHERE `case_id` = v_case_id);
 
@@ -1522,23 +1477,13 @@ BEGIN
     DELETE FROM `enforcement_documents` WHERE `case_id` = v_case_id;
     DELETE FROM `case_movements` WHERE `case_id` = v_case_id;
     DELETE FROM `case_staff` WHERE `case_id` = v_case_id;
-
-    -- Создание временной таблицы для файлов (для последующего удаления с диска)
-    CREATE TEMPORARY TABLE IF NOT EXISTS `temp_deleted_files` AS
-    SELECT `file_path`
-    FROM `documents`
-    WHERE `case_id` = v_case_id;
-
     DELETE FROM `documents` WHERE `case_id` = v_case_id;
     DELETE FROM `case_participants` WHERE `case_id` = v_case_id;
-
-    -- 4. Удаление самого дела
     DELETE FROM `court_cases` WHERE `case_id` = v_case_id;
 
-    -- Получаем общее количество удаленных записей
     SET p_deleted_count = ROW_COUNT();
 
-    -- 5. Аудит удаления
+    -- Аудит удаления
     INSERT INTO `system_audit_log` (
         `event_type`,
         `table_name`,
@@ -1565,19 +1510,12 @@ BEGIN
         p_staff_id
     );
 
-    -- Фиксация транзакции
-    COMMIT;
+        COMMIT;
 
-    -- Формирование сообщения об успехе
-    SET p_message = CONCAT(
-        'Дело №', p_case_number, ' успешно удалено. ',
-        'Удалено записей: ', p_deleted_count,
-        '. Создана резервная копия ID: ', p_backup_case_id, '.',
-        ' Рекомендуется проверить файлы на диске для ручного удаления.'
-    );
-
-    -- Очистка временной таблицы
-    DROP TEMPORARY TABLE IF EXISTS `temp_deleted_files`;
+        SET p_message = CONCAT(
+            'Дело №', p_case_number, ' удалено, архив ID: ', p_backup_case_id
+        );
+    END IF;
 END$$
 
 -- 9.4. Процедура для добавления судебного документа
@@ -1612,137 +1550,114 @@ BEGIN
     IF v_case_id IS NULL THEN
         SET p_message = CONCAT('Дело с номером ', p_case_number, ' не найдено');
         SET p_document_id = NULL;
-        RETURN;
-    END IF;
+    ELSE
+        SELECT `type_id` INTO v_document_type_id FROM `dict_document_types` WHERE `type_code` = p_document_type_code LIMIT 1;
+        
+        IF v_document_type_id IS NULL THEN
+            SET p_message = CONCAT('Тип документа с кодом ', p_document_type_code, ' не найден');
+            SET p_document_id = NULL;
+        ELSE
+            SELECT CONCAT(p.`last_name`, ' ', p.`first_name`, ' ', COALESCE(p.`patronymic`, '')) INTO v_judge_name
+            FROM `case_participants` cp
+            JOIN `persons` p ON cp.`person_id` = p.`person_id`
+            WHERE cp.`participant_id` = p_judge_participant_id AND cp.`case_id` = v_case_id LIMIT 1;
+            
+            IF v_judge_name IS NULL THEN
+                SET p_message = 'Указанный участник не является судьей в данном деле';
+                SET p_document_id = NULL;
+            ELSE
 
-    -- Проверка статуса дела
-    IF v_case_status NOT IN ('Поступило', 'Назначено к слушанию', 'В рассмотрении', 'Решено', 'Завершено') THEN
-        SET p_message = CONCAT('Нельзя добавить документ в дело со статусом "', v_case_status, '"');
-        SET p_document_id = NULL;
-        RETURN;
-    END IF;
+            -- Генерация внутреннего номера документа
+            SELECT CONCAT(
+                (SELECT COUNT(*) + 1 FROM `documents` WHERE `case_id` = v_case_id),
+                '-',
+                YEAR(CURRENT_DATE())
+            ) INTO v_internal_number;
 
-    -- Проверка существования типа документа
-    SELECT `type_id` INTO v_document_type_id
-    FROM `dict_document_types`
-    WHERE `type_code` = p_document_type_code;
+            -- Начало транзакции
+            START TRANSACTION;
 
-    IF v_document_type_id IS NULL THEN
-        SET p_message = CONCAT('Тип документа с кодом ', p_document_type_code, ' не найден');
-        SET p_document_id = NULL;
-        RETURN;
-    END IF;
+            -- Вставка документа
+            INSERT INTO `documents` (
+                `case_id`,
+                `internal_number`,
+                `type_id`,
+                `title`,
+                `file_path`,
+                `mime_type`,
+                `author_participant_id`,
+                `created_date`,
+                `received_date`,
+                `description`
+            ) VALUES (
+                v_case_id,
+                v_internal_number,
+                v_document_type_id,
+                p_title,
+                p_file_path,
+                p_mime_type,
+                p_judge_participant_id,
+                COALESCE(p_decision_date, CURRENT_DATE),
+                p_received_date,
+                CONCAT_WS('\n',
+                    p_description,
+                    CASE WHEN p_decision_text IS NOT NULL THEN CONCAT('Решение: ', p_decision_text) END
+                )
+            );
 
-    -- Проверка, что указанный участник является судьей в этом деле
-    SELECT CONCAT(p.`last_name`, ' ', p.`first_name`, ' ', p.`patronymic`)
-    INTO v_judge_name
-    FROM `case_participants` cp
-    JOIN `persons` p ON cp.`person_id` = p.`person_id`
-    WHERE cp.`participant_id` = p_judge_participant_id
-      AND cp.`case_id` = v_case_id
-      AND cp.`role_id` = (SELECT `role_id` FROM `dict_roles` WHERE `role_code` = 'SUDYA');
+            SET p_document_id = LAST_INSERT_ID();
 
-    IF v_judge_name IS NULL THEN
-        SET p_message = 'Указанный участник не является судьей в данном деле';
-        SET p_document_id = NULL;
-        RETURN;
-    END IF;
+            -- Если это решение или приговор, обновляем информацию в деле
+            IF p_document_type_code IN ('RESHENIE', 'PRIGOVOR', 'OPREDEL', 'POSTANOV') THEN
+                UPDATE `court_cases`
+                SET
+                    `result` = p_decision_text,
+                    `result_date` = p_decision_date,
+                    `updated_at` = CURRENT_TIMESTAMP
+                WHERE `case_id` = v_case_id;
 
-    -- Генерация внутреннего номера документа
-    SELECT CONCAT(
-        (SELECT COUNT(*) + 1 FROM `documents` WHERE `case_id` = v_case_id),
-        '-',
-        YEAR(CURRENT_DATE())
-    ) INTO v_internal_number;
+                -- Если дело было решено, меняем статус
+                IF p_document_type_code IN ('RESHENIE', 'PRIGOVOR') THEN
+                    UPDATE `court_cases`
+                    SET `status_id` = (SELECT `status_id` FROM `dict_case_statuses` WHERE `status_code` = 'RESHENO')
+                    WHERE `case_id` = v_case_id;
+                END IF;
+            END IF;
 
-    -- Проверка даты решения
-    IF p_decision_date > CURDATE() THEN
-        SET p_message = 'Дата решения не может быть в будущем';
-        SET p_document_id = NULL;
-        RETURN;
-    END IF;
+            -- Аудит добавления документа
+            INSERT INTO `system_audit_log` (
+                `event_type`,
+                `table_name`,
+                `record_id`,
+                `old_value`,
+                `new_value`,
+                `description`
+            ) VALUES (
+                'DOCUMENT_ADDED',
+                'documents',
+                p_document_id,
+                NULL,
+                JSON_OBJECT(
+                    'case_number', p_case_number,
+                    'document_type', (SELECT `type_name` FROM `dict_document_types` WHERE `type_id` = v_document_type_id),
+                    'title', p_title,
+                    'judge', v_judge_name,
+                    'decision_date', p_decision_date
+                ),
+                CONCAT('Добавлен судебный документ к делу №', p_case_number, '. Судья: ', v_judge_name)
+            );
 
-    -- Начало транзакции
-    START TRANSACTION;
+            -- Фиксация транзакции
+            COMMIT;
 
-    -- Вставка документа
-    INSERT INTO `documents` (
-        `case_id`,
-        `internal_number`,
-        `type_id`,
-        `title`,
-        `file_path`,
-        `mime_type`,
-        `author_participant_id`,
-        `created_date`,
-        `received_date`,
-        `description`
-    ) VALUES (
-        v_case_id,
-        v_internal_number,
-        v_document_type_id,
-        p_title,
-        p_file_path,
-        p_mime_type,
-        p_judge_participant_id,
-        COALESCE(p_decision_date, CURDATE()),
-        p_received_date,
-        CONCAT_WS('\n',
-            p_description,
-            CASE WHEN p_decision_text IS NOT NULL THEN CONCAT('Решение: ', p_decision_text) END
-        )
-    );
-
-    SET p_document_id = LAST_INSERT_ID();
-
-    -- Если это решение или приговор, обновляем информацию в деле
-    IF p_document_type_code IN ('RESHENIE', 'PRIGOVOR', 'OPREDEL', 'POSTANOV') THEN
-        UPDATE `court_cases`
-        SET
-            `result` = p_decision_text,
-            `result_date` = p_decision_date,
-            `updated_at` = CURRENT_TIMESTAMP
-        WHERE `case_id` = v_case_id;
-
-        -- Если дело было решено, меняем статус
-        IF p_document_type_code IN ('RESHENIE', 'PRIGOVOR') THEN
-            UPDATE `court_cases`
-            SET `status_id` = (SELECT `status_id` FROM `dict_case_statuses` WHERE `status_code` = 'RESHENO')
-            WHERE `case_id` = v_case_id;
+            SET p_message = CONCAT(
+                'Документ успешно добавлен. ID: ', p_document_id,
+                '. Внутренний номер: ', v_internal_number,
+                '. Судья: ', v_judge_name
+            );
+            END IF;
         END IF;
     END IF;
-
-    -- Аудит добавления документа
-    INSERT INTO `system_audit_log` (
-        `event_type`,
-        `table_name`,
-        `record_id`,
-        `old_value`,
-        `new_value`,
-        `description`
-    ) VALUES (
-        'DOCUMENT_ADDED',
-        'documents',
-        p_document_id,
-        NULL,
-        JSON_OBJECT(
-            'case_number', p_case_number,
-            'document_type', (SELECT `type_name` FROM `dict_document_types` WHERE `type_id` = v_document_type_id),
-            'title', p_title,
-            'judge', v_judge_name,
-            'decision_date', p_decision_date
-        ),
-        CONCAT('Добавлен судебный документ к делу №', p_case_number, '. Судья: ', v_judge_name)
-    );
-
-    -- Фиксация транзакции
-    COMMIT;
-
-    SET p_message = CONCAT(
-        'Документ успешно добавлен. ID: ', p_document_id,
-        '. Внутренний номер: ', v_internal_number,
-        '. Судья: ', v_judge_name
-    );
 END$$
 
 -- 9.5. Функция для проверки прав доступа сотрудника
@@ -1885,16 +1800,16 @@ BEGIN
     INSERT INTO `statistics_cache` (`statistic_type`, `period_date`, `judge_participant_id`, `value_json`, `expires_at`)
     SELECT
         'judge_monthly',
-        LAST_DAY(CURDATE() - INTERVAL 1 MONTH),
+        LAST_DAY('2099-12-31' - INTERVAL 1 MONTH),
         `judge_participant_id`,
         JSON_OBJECT(
             'total_cases', COUNT(*),
             'completed_cases', SUM(CASE WHEN `status_name` = 'Завершено' THEN 1 ELSE 0 END),
             'avg_duration', AVG(`days_to_resolve`)
         ),
-        DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+        DATE_ADD('2099-12-31', INTERVAL 1 DAY)
     FROM `v_cases_by_judge`
-    WHERE `init_date` >= LAST_DAY(CURDATE() - INTERVAL 1 MONTH) + INTERVAL 1 DAY - INTERVAL 1 YEAR
+    WHERE `init_date` >= LAST_DAY('2099-12-31' - INTERVAL 1 MONTH) + INTERVAL 1 DAY - INTERVAL 1 YEAR
     GROUP BY `judge_participant_id`;
 
     -- Логирование завершения
