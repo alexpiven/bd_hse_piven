@@ -95,10 +95,249 @@
 
 #### 2.4. Индексы и нормализация
 
-- **Нормализация**: все основные сущности разнесены по отдельным таблицам, справочники выделены, связи многие‑ко‑многим реализованы через `case_participants` и `session_participants`. 
+- **Нормализация**: все основные сущности разнесены по отдельным таблицам, справочники выделены, связи многие‑ко‑многим реализованы через `case_participants` и `session_participants`. База как минимум в 3НФ.
 - **Индексы**:
   - поисковые: по ФИО и дате рождения в `persons`, по статусу/категории/датам в `court_cases`, по типам и датам документов, по ролям участников и т.д.;
   - уникальные: паспортные данные, комбинация ФИО+дата рождения, номер дела+дата, внутр. номера документов, номера исполнительных документов и др.
+
+#### 2.5. Форматы и типы атрибутов (полная справка по полям)
+
+Ниже приведено детальное описание атрибутов всех основных таблиц: типы данных, ожидаемый формат, ключевые ограничения и назначение.
+
+##### 2.5.1. `persons` — физические лица
+
+| Поле                  | Тип          | Формат / пример                         | Ограничения / комментарий                                     |
+|-----------------------|-------------|-----------------------------------------|----------------------------------------------------------------|
+| `person_id`           | BIGINT PK   | `1`                                     | AUTO_INCREMENT, первичный ключ                                |
+| `last_name`           | VARCHAR(100)| `Иванов`                                | NOT NULL, Фамилия; кириллица/латиница                         |
+| `first_name`          | VARCHAR(100)| `Иван`                                  | NOT NULL, Имя                                                 |
+| `patronymic`          | VARCHAR(100)| `Иванович` / NULL                       | Отчество, может быть NULL                                     |
+| `birth_date`          | DATE        | `1980-01-15`                            | CHECK: `>= '1900-01-01' AND <= '2099-12-31'`                  |
+| `birth_place`         | VARCHAR(255)| `г. Москва`                             | Место рождения                                                |
+| `snils`               | CHAR(14)    | `123-456-789 00`                        | Уникальный, CHECK по шаблону `XXX-XXX-XXX YY`                 |
+| `inn`                 | VARCHAR(12) | `770000000000`                          | Уникальный, 10–12 цифр                                        |
+| `passport_series`     | VARCHAR(4)  | `4501`                                  | 4 цифры                                                       |
+| `passport_number`     | VARCHAR(6)  | `123456`                                | 6 цифр, уникально в паре с серией                             |
+| `passport_issued_by`  | VARCHAR(255)| `ОУФМС России по г. Москве`             | Орган, выдавший паспорт                                       |
+| `passport_issue_date` | DATE        | `2000-01-20`                            | Дата выдачи, в разумном диапазоне                             |
+| `registration_address`| VARCHAR(500)| `г. Москва, ул. Ленина, д. 1, кв. 10`   | Адрес регистрации                                             |
+| `actual_address`      | VARCHAR(500)| `г. Москва, ...`                        | Фактический адрес                                             |
+| `phone_number`        | VARCHAR(20) | `+7-900-123-45-67`                      | CHECK по шаблону телефона                                     |
+| `email`               | VARCHAR(255)| `user@example.com`                      | CHECK по простому REGEXP e‑mail                               |
+| `created_at`          | TIMESTAMP   |                                         | DEFAULT CURRENT_TIMESTAMP                                     |
+| `updated_at`          | TIMESTAMP   |                                         | Обновляется триггером при изменениях                          |
+
+##### 2.5.2. `legal_entities` — юридические лица
+
+| Поле                 | Тип          | Пример                                              | Ограничения / комментарий                 |
+|----------------------|-------------|------------------------------------------------------|------------------------------------------|
+| `legal_entity_id`    | BIGINT PK   | `1`                                                  | AUTO_INCREMENT                           |
+| `full_name`          | VARCHAR(500)| `Общество с ограниченной ответственностью "Альфа"`   | Полное наименование, NOT NULL            |
+| `short_name`         | VARCHAR(255)| `ООО "Альфа"`                                        | Краткое наименование, NOT NULL           |
+| `inn`                | VARCHAR(12) | `7701000001`                                         | Уникальный ИНН                           |
+| `kpp`                | VARCHAR(9)  | `770101001`                                          | КПП, 9 цифр                              |
+| `ogrn`               | VARCHAR(13) | `1027700000001`                                      | ОГРН, 13 цифр                            |
+| `legal_address`      | VARCHAR(500)| `г. Москва, ул. Тверская, д. 1`                      | Юридический адрес                        |
+| `actual_address`     | VARCHAR(500)|                                                      | Фактический адрес                        |
+| `director_person_id` | BIGINT FK   |                                                      | FK → `persons.person_id`                 |
+| `created_at`         | TIMESTAMP   |                                                      | DEFAULT CURRENT_TIMESTAMP                |
+
+##### 2.5.3. `court_staff` — сотрудники суда
+
+| Поле               | Тип                 | Пример             | Комментарий                                        |
+|--------------------|--------------------|--------------------|----------------------------------------------------|
+| `staff_id`         | BIGINT PK          | `1`                | AUTO_INCREMENT                                     |
+| `person_id`        | BIGINT FK          |                    | FK → `persons.person_id`                           |
+| `position`         | ENUM / TINYINT     | `1` (Судья)        | Должность: Судья, Секретарь, Помощник и др.       |
+| `department`       | VARCHAR(255)       | `Гражданский отдел`| Подразделение                                      |
+| `judge_id`         | VARCHAR(50)        | `JUDGE-001`        | Внутренний идентификатор судьи                     |
+| `employment_date`  | DATE               |                    | Дата приёма                                       |
+| `termination_date` | DATE / NULL        |                    | Дата увольнения (при наличии)                      |
+| `is_active`        | BOOLEAN            | TRUE/FALSE         | Признак активности                                 |
+| `created_at`       | TIMESTAMP          |                    | DEFAULT CURRENT_TIMESTAMP                          |
+
+##### 2.5.4. `court_cases` — судебные дела
+
+| Поле                 | Тип          | Пример        | Комментарий                                                             |
+|----------------------|-------------|--------------|-------------------------------------------------------------------------|
+| `case_id`            | BIGINT PK   | `1`          | AUTO_INCREMENT                                                          |
+| `case_number`        | VARCHAR(100)| `2-1234/2024`| Уникальный номер дела, шаблон `N-NNNN/YYYY`                             |
+| `category_id`        | INT FK      |              | FK → `dict_case_categories.category_id`                                 |
+| `status_id`          | INT FK      |              | FK → `dict_case_statuses.status_id`                                     |
+| `previous_case_id`   | BIGINT FK   | NULL/ID      | Самоссылка на предыдущее дело (апелляция и т.п.)                        |
+| `init_date`          | DATE        | `2024-01-10` | Дата поступления, CHECK по диапазону                                    |
+| `result_date`        | DATE        | `2024-03-15` | Дата окончания, `>= init_date`, может быть NULL                         |
+| `summary`            | VARCHAR(1000)| Краткое описание| Описание сути спора, NOT NULL                                        |
+| `result`             | VARCHAR(1000)| `Исковые требования удовлетворено ...` | Текст результата                   |
+| `instance_number`    | TINYINT     | `1`          | Номер инстанции (1, 2, 3 …)                                            |
+| `judge_participant_id`| BIGINT FK  |              | FK → `case_participants.participant_id` (роль судьи)                    |
+| `created_at`         | TIMESTAMP   |              | DEFAULT CURRENT_TIMESTAMP                                               |
+| `updated_at`         | TIMESTAMP   |              | Обновляется триггером                                                   |
+
+##### 2.5.5. `case_participants` — участники дел
+
+| Поле               | Тип        | Комментарий                                                   |
+|--------------------|-----------|----------------------------------------------------------------|
+| `participant_id`   | BIGINT PK | AUTO_INCREMENT                                                 |
+| `case_id`          | BIGINT FK | FK → `court_cases.case_id`                                    |
+| `person_id`        | BIGINT FK | FK → `persons.person_id`, NULL для чисто юридических лиц      |
+| `legal_entity_id`  | BIGINT FK | FK → `legal_entities.legal_entity_id`, NULL для физлиц        |
+| `role_id`          | INT FK    | FK → `dict_roles.role_id` (ISTEC, OTVETCH, SVIDETEL и др.)    |
+| `representative_id`| BIGINT FK | (опционально) представитель                                 |
+| `created_at`       | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP                                     |
+
+##### 2.5.6. `case_staff` — назначенные судья и секретарь
+
+| Поле                   | Тип        | Комментарий                                               |
+|------------------------|-----------|------------------------------------------------------------|
+| `case_staff_id`        | BIGINT PK | AUTO_INCREMENT                                             |
+| `case_id`              | BIGINT FK | FK → `court_cases.case_id`                                |
+| `judge_participant_id` | BIGINT FK | FK → `case_participants.participant_id` (судья)           |
+| `secretary_participant_id`| BIGINT FK | FK → `case_participants.participant_id` (секретарь)  |
+| `assignment_date`      | DATE      | Дата назначения                                            |
+| `is_active`            | BOOLEAN   | Только одна активная запись на дело                        |
+
+##### 2.5.7. `court_sessions` — судебные заседания
+
+| Поле            | Тип          | Комментарий                                             |
+|-----------------|-------------|----------------------------------------------------------|
+| `session_id`    | BIGINT PK   | AUTO_INCREMENT                                           |
+| `case_id`       | BIGINT FK   | FK → `court_cases.case_id`                              |
+| `session_type_id`| INT FK     | FK → `dict_session_types.type_id`                       |
+| `session_date`  | TIMESTAMP   | Дата/время заседания, CHECK: не раньше 2000‑01‑01       |
+| `room_number`   | VARCHAR(50) | Номер зала                                               |
+| `created_at`    | TIMESTAMP   | DEFAULT CURRENT_TIMESTAMP                                |
+
+##### 2.5.8. `session_participants` — участники заседаний
+
+| Поле                  | Тип        | Комментарий                                      |
+|-----------------------|-----------|---------------------------------------------------|
+| `session_participant_id`| BIGINT PK| AUTO_INCREMENT                                   |
+| `session_id`          | BIGINT FK | FK → `court_sessions.session_id`                 |
+| `case_participant_id` | BIGINT FK | FK → `case_participants.participant_id`          |
+| `is_present`          | BOOLEAN   | Признак присутствия                              |
+| `notes`               | TEXT      | Примечания                                       |
+| `created_at`          | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP                        |
+
+##### 2.5.9. `documents` — документы по делу
+
+| Поле                  | Тип          | Пример                                  | Комментарий                                                  |
+|-----------------------|-------------|-----------------------------------------|--------------------------------------------------------------|
+| `document_id`         | BIGINT PK   |                                         | AUTO_INCREMENT                                               |
+| `case_id`             | BIGINT FK   |                                         | FK → `court_cases.case_id`                                  |
+| `internal_number`     | VARCHAR(100)| `1-2024`                                | Внутренний номер документа в рамках дела                    |
+| `type_id`             | INT FK      |                                         | FK → `dict_document_types.type_id`                          |
+| `title`               | VARCHAR(500)| `Решение суда ...`                      | NOT NULL, CHECK: длина ≥ 5                                  |
+| `file_path`           | TEXT        | `/storage/cases/2-1234-2024/1.pdf`      | NOT NULL, CHECK по расширениям (`.pdf/.doc/.xls/.jpg/...`)  |
+| `file_hash`           | VARCHAR(64) |                                         | SHA‑256, 64 hex‑символа                                     |
+| `mime_type`           | VARCHAR(100)| `application/pdf`                       | MIME‑тип                                                     |
+| `author_participant_id`| BIGINT FK  |                                         | FK → `case_participants.participant_id`                     |
+| `created_date`        | DATE        |                                         | Дата создания, CHECK по диапазону                           |
+| `received_date`       | DATE        |                                         | Дата поступления, `>= created_date`                         |
+| `description`         | TEXT        |                                         | Свободное описание                                          |
+| `created_at`          | TIMESTAMP   |                                         | DEFAULT CURRENT_TIMESTAMP                                   |
+
+##### 2.5.10. `enforcement_documents` — исполнительные документы
+
+| Поле                 | Тип                                   | Комментарий                                       |
+|----------------------|--------------------------------------|--------------------------------------------------|
+| `enforcement_id`     | BIGINT PK                           | AUTO_INCREMENT                                   |
+| `document_id`        | BIGINT FK                           | FK → `documents.document_id`                     |
+| `case_id`            | BIGINT FK                           | FK → `court_cases.case_id`                       |
+| `enforcement_type`   | ENUM('Исполнительный лист','Судебный приказ','Решение') | Тип исп. документа |
+| `enforcement_number` | VARCHAR(100)                        | Номер исполнительного документа                  |
+| `issue_date`         | DATE                                | Дата выдачи                                      |
+| `bailiff_sent_date`  | DATE / NULL                         | Дата направления приставам                       |
+| `execution_date`     | DATE / NULL                         | Дата фактического исполнения                     |
+| `amount`             | DECIMAL(18,2)                       | Сумма взыскания                                  |
+| `status_id`          | INT FK                              | FK → `dict_enforcement_statuses.status_id`       |
+
+##### 2.5.11. Вспомогательные таблицы
+
+**`case_movements`** — журнал изменений по делам  
+Основные поля:  
+- `movement_id` BIGINT PK — идентификатор записи;  
+- `case_id` BIGINT FK — дело;  
+- `movement_type_id` INT FK → `dict_movement_types`;  
+- `old_value`/`new_value` TEXT — прежнее и новое значение (обычно статус);  
+- `movement_date` DATE — дата изменения;  
+- `staff_id` BIGINT FK → `court_staff.staff_id`;  
+- `notes` TEXT — комментарий.
+
+**`judicial_districts`** — судебные округа  
+- `district_id` BIGINT PK;  
+- `district_name` VARCHAR(255) — наименование;  
+- `region` VARCHAR(255) — регион/субъект РФ.
+
+**`judge_districts`** — назначения судей по округам  
+- `judge_district_id` BIGINT PK;  
+- `judge_participant_id` BIGINT FK → `case_participants.participant_id`;  
+- `district_id` BIGINT FK → `judicial_districts.district_id`;  
+- `assignment_date` DATE;  
+- `is_current` BOOLEAN.
+
+**`statistics_cache`** — кэш агрегированной статистики  
+- `stat_id` BIGINT PK;  
+- `statistic_type` VARCHAR(50) — `judge_monthly`, `category_monthly` и т.п.;  
+- `period_date` DATE — конец периода (обычно месяц);  
+- `category_id` INT FK (опционально);  
+- `judge_participant_id` BIGINT FK (опционально);  
+- `district_id` BIGINT FK → `judicial_districts`;  
+- `value_json` JSON — агрегаты (`total_cases`, `completed_cases`, `avg_duration_days`);  
+- `calculated_at`/`expires_at` DATETIME.
+
+**`system_audit_log`** — журнал аудита  
+- `audit_id` BIGINT PK;  
+- `event_type` ENUM('INSERT','UPDATE','DELETE');  
+- `table_name` VARCHAR(100);  
+- `record_id` BIGINT;  
+- `old_value`/`new_value` JSON/TEXT;  
+- `description` VARCHAR(1000);  
+- `user_id` BIGINT NULL;  
+- `staff_id` BIGINT FK → `court_staff`;  
+- `created_at` TIMESTAMP.
+
+**`archived_cases`** / **`archived_case_participants`** — архив  
+Структура аналогична `court_cases` и `case_participants`, но используется для хранения удалённых (архивированных) записей, с дополнительными полями аудита (дата архивации, причина, инициатор).
+
+##### 2.5.12. Справочники (`dict_*`)
+
+Все справочники имеют простую структуру: идентификатор, код (если нужен) и человекочитаемое имя.
+
+**`dict_case_categories`**  
+- `category_id` INT PK;  
+- `category_code` VARCHAR(50) — технический код;  
+- `category_name` VARCHAR(255) — название категории (Гражданское дело, Уголовное дело, …).
+
+**`dict_case_statuses`**  
+- `status_id` INT PK;  
+- `status_code` VARCHAR(50);  
+- `status_name` VARCHAR(255) — например: В производстве, Завершено, Приостановлено.
+
+**`dict_roles`**  
+- `role_id` INT PK;  
+- `role_code` VARCHAR(50) — `ISTEC`, `OTVETCH`, `POT`, `SVID`, `SUDJA` и др.;  
+- `role_name` VARCHAR(255) — человекочитаемое название роли.
+
+**`dict_document_types`**  
+- `type_id` INT PK;  
+- `type_code` VARCHAR(50) — `ISK_ZAIV`, `RESHENIE`, `PRIGOVOR`, `PROT_SZ` и др.;  
+- `type_name` VARCHAR(255).
+
+**`dict_session_types`**  
+- `type_id` INT PK;  
+- `type_code` VARCHAR(50);  
+- `type_name` VARCHAR(255) — предварительное заседание, основное заседание и т.п.
+
+**`dict_enforcement_statuses`**  
+- `status_id` INT PK;  
+- `status_code` VARCHAR(50);  
+- `status_name` VARCHAR(255) — выдан, направлен приставам, исполнен, прекращён и др.
+
+**`dict_movement_types`**  
+- `movement_type_id` INT PK;  
+- `movement_code` VARCHAR(50);  
+- `movement_name` VARCHAR(255) — изменение статуса, смена судьи, передача по подсудности и др.
 
 ---
 
@@ -543,4 +782,3 @@ SELECT @doc_id AS document_id, @doc_msg AS message;
 ```
 
 **Примечание**: Процедура создает документ в таблице `documents`, генерирует внутренний номер, обновляет статус и результат дела (если это решение/приговор), и записывает операцию в `system_audit_log`.
-
